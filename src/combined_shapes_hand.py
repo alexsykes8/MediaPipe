@@ -27,10 +27,10 @@ def find_center(contour):
 
 # Initialize deques for tracking the last 20 frame centers
 max_frames = 20
-green_left_deque = deque(maxlen=max_frames)
-green_right_deque = deque(maxlen=max_frames)
-blue_left_deque = deque(maxlen=max_frames)
-blue_right_deque = deque(maxlen=max_frames)
+purple_top_left_deque = deque(maxlen=max_frames)
+purple_top_right_deque = deque(maxlen=max_frames)
+purple_bottom_left_deque = deque(maxlen=max_frames)
+purple_bottom_right_deque = deque(maxlen=max_frames)
 
 # Open the default camera
 cap = cv2.VideoCapture(0)
@@ -58,12 +58,10 @@ else:
 
         # Define color ranges for each object
         color_ranges = {
-            'blue': [(100, 50, 50), (140, 255, 255)],  # Lower and upper range for blue
-            'green': [(40, 20, 20), (90, 170, 170)],  # Lower and upper range for green
+            'purple': [(120, 16, 26), (140, 255, 255)],  # Lower and upper range for blue
         }
 
-        current_green_centers = None
-        current_blue_centers = None
+        current_purple_centers = None
 
         for color, (lower, upper) in color_ranges.items():
             # Create a mask for the current color
@@ -87,62 +85,56 @@ else:
                     valid_contours.append(contour)
 
             # Use KMeans to cluster the centers of the shapes
-            if len(centres) >= 2:
-                kmeans = KMeans(n_clusters=2, random_state=0).fit(centres)
+            if len(centres) >= 4:
+                kmeans = KMeans(n_clusters=4, random_state=0).fit(centres)
                 cluster_centers = kmeans.cluster_centers_
 
-                # Update the running averages based on cluster position (left or right)
-                if color == 'green' and len(cluster_centers) > 0:
-                    current_green_centers = cluster_centers
-                    # Leftmost and rightmost clusters based on x-coordinate
-                    left_cluster = min(current_green_centers, key=lambda x: x[0])
-                    right_cluster = max(current_green_centers, key=lambda x: x[0])
 
-                    green_left_deque.append(left_cluster)
-                    green_right_deque.append(right_cluster)
+                # Update the running averages based on cluster position
+                if color == 'purple' and len(cluster_centers) > 0:
+                    current_purple_centers = cluster_centers
 
-                elif color == 'blue' and len(cluster_centers) > 0:
-                    current_blue_centers = cluster_centers
-                    # Leftmost and rightmost clusters based on x-coordinate
-                    left_cluster = min(current_blue_centers, key=lambda x: x[0])
-                    right_cluster = max(current_blue_centers, key=lambda x: x[0])
+                    # Find top-left, top-right, bottom-left, and bottom-right clusters
+                    top_left_cluster = min(current_purple_centers, key=lambda x: (x[1], x[0]))  # Min y, then min x
+                    top_right_cluster = min(current_purple_centers, key=lambda x: (x[1], -x[0]))  # Min y, then max x
+                    bottom_left_cluster = max(current_purple_centers, key=lambda x: (x[1], -x[0]))  # Max y, then min x
+                    bottom_right_cluster = max(current_purple_centers, key=lambda x: (x[1], x[0]))  # Max y, then max x
 
+                    # Update deques for each corner
+                    purple_top_left_deque.append(top_left_cluster)
+                    purple_top_right_deque.append(top_right_cluster)
+                    purple_bottom_left_deque.append(bottom_left_cluster)
+                    purple_bottom_right_deque.append(bottom_right_cluster)
 
-
-                    blue_left_deque.append(left_cluster)
-                    blue_right_deque.append(right_cluster)
-
-                cluster_colors = [(0, 255, 0), (255, 0, 0)] if color == 'green' else [(255, 255, 0), (0, 255, 255)]
+                cluster_colors = [(0, 255, 0), (255, 0, 0), (255, 255, 0), (0, 255, 255)]
                 for i, contour in enumerate(valid_contours):
                     cv2.drawContours(frame, [contour], -1, cluster_colors[kmeans.labels_[i]], 2)
                     cv2.circle(frame, centres[i], 5, cluster_colors[kmeans.labels_[i]], -1)
 
 
         # Calculate the running average of the centers over the last 20 frames, ignoring anomalies
-        if len(green_left_deque) == max_frames and len(green_right_deque) == max_frames:
-            filtered_left_green = filter_anomalies(green_left_deque)
-            filtered_right_green = filter_anomalies(green_right_deque)
-            avg_left_green = np.mean(filtered_left_green, axis=0) if len(filtered_left_green) > 0 else np.array([0.0, 0.0])
-            avg_right_green = np.mean(filtered_right_green, axis=0) if len(filtered_right_green) > 0 else np.array([0.0, 0.0])
-        else:
-            avg_left_green = avg_right_green = np.array([0.0, 0.0])
+        if len(purple_top_left_deque) == max_frames and len(purple_bottom_left_deque) == max_frames and len(purple_top_right_deque) == max_frames and len(purple_bottom_right_deque) == max_frames:
+            filtered_top_left_purple = filter_anomalies(purple_top_left_deque)
+            filtered_top_right_purple = filter_anomalies(purple_top_right_deque)
+            filtered_bottom_left_purple = filter_anomalies(purple_bottom_left_deque)
+            filtered_bottom_right_purple = filter_anomalies(purple_bottom_right_deque)
+            avg_top_left_purple = np.mean(filtered_top_left_purple, axis=0) if len(filtered_top_left_purple) > 0 else np.array([0.0, 0.0])
+            avg_top_right_purple = np.mean(filtered_top_right_purple, axis=0) if len(filtered_top_right_purple) > 0 else np.array([0.0, 0.0])
+            avg_bottom_left_purple = np.mean(filtered_bottom_left_purple, axis=0) if len(filtered_bottom_left_purple) > 0 else np.array([0.0, 0.0])
+            avg_bottom_right_purple = np.mean(filtered_bottom_right_purple, axis=0) if len(filtered_bottom_right_purple) > 0 else np.array([0.0, 0.0])
 
-        if len(blue_left_deque) == max_frames and len(blue_right_deque) == max_frames:
-            filtered_left_blue = filter_anomalies(blue_left_deque)
-            filtered_right_blue = filter_anomalies(blue_right_deque)
-            avg_left_blue = np.mean(filtered_left_blue, axis=0) if len(filtered_left_blue) > 0 else np.array([0.0, 0.0])
-            avg_right_blue = np.mean(filtered_right_blue, axis=0) if len(filtered_right_blue) > 0 else np.array([0.0, 0.0])
         else:
-            avg_left_blue = avg_right_blue = np.array([0.0, 0.0])
+            avg_bottom_right_purple = avg_top_right_purple = avg_bottom_left_purple = avg_top_left_purple = np.array([0.0, 0.0])
+
 
         # Draw polygons connecting all four cluster centers (leftmost and rightmost for green and blue)
-        if current_green_centers is not None and current_blue_centers is not None:
+        if current_purple_centers is not None:
             # Collect the four centers (leftmost and rightmost from green and blue)
             all_centers = np.vstack((
-                avg_left_green,
-                avg_right_green,
-                avg_right_blue,
-                avg_left_blue
+                avg_top_left_purple,
+                avg_top_right_purple,
+                avg_bottom_right_purple,
+                avg_bottom_left_purple
             )).astype(int)
 
             if len(all_centers) == 4:  # Ensure there are exactly four centers
