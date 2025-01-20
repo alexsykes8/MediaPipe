@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
-from sklearn.cluster import KMeans
 from collections import deque
 import mediapipe as mp
+
+
 
 # Function to filter out anomalies
 def filter_anomalies(deque):
@@ -27,10 +28,13 @@ def find_center(contour):
 
 # Initialize deques for tracking the last 20 frame centers
 max_frames = 20
-purple_top_left_deque = deque(maxlen=max_frames)
-purple_top_right_deque = deque(maxlen=max_frames)
-purple_bottom_left_deque = deque(maxlen=max_frames)
-purple_bottom_right_deque = deque(maxlen=max_frames)
+green_left_deque = deque(maxlen=max_frames)
+green_right_deque = deque(maxlen=max_frames)
+blue_left_deque = deque(maxlen=max_frames)
+blue_right_deque = deque(maxlen=max_frames)
+
+# Distance of the fingertip to a colour block for it to be considered correct placement
+distance_threshold = -20
 
 # Open the default camera
 cap = cv2.VideoCapture(0)
@@ -58,10 +62,14 @@ else:
 
         # Define color ranges for each object
         color_ranges = {
-            'purple': [(120, 16, 26), (140, 255, 255)],  # Lower and upper range for blue
+            'blue': [(100, 50, 50), (140, 255, 255)],  # Lower and upper range for blue
+            'green': [(40, 20, 20), (90, 170, 170)],  # Lower and upper range for green
         }
 
-        current_purple_centers = None
+        current_green_centers = None
+        current_blue_centers = None
+
+        valid_contours_blue = []
 
         for color, (lower, upper) in color_ranges.items():
             # Create a mask for the current color
@@ -84,69 +92,172 @@ else:
                     centres.append(center)
                     valid_contours.append(contour)
 
-            # Use KMeans to cluster the centers of the shapes
-            if len(centres) >= 4:
-                kmeans = KMeans(n_clusters=4, random_state=0).fit(centres)
-                cluster_centers = kmeans.cluster_centers_
+
+            # Update the running averages based on cluster position (left or right)
+            if color == 'green' and len(centres) > 0:
+                current_green_centers = centres
+                # Leftmost and rightmost clusters based on x-coordinate
+                left_cluster = min(current_green_centers, key=lambda x: x[0])
+                right_cluster = max(current_green_centers, key=lambda x: x[0])
+
+                green_left_deque.append(left_cluster)
+                green_right_deque.append(right_cluster)
+
+            elif color == 'blue' and len(centres) > 0:
+                current_blue_centers = centres
+                # Leftmost and rightmost clusters based on x-coordinate
+                left_cluster = min(current_blue_centers, key=lambda x: x[0])
+                right_cluster = max(current_blue_centers, key=lambda x: x[0])
 
 
-                # Update the running averages based on cluster position
-                if color == 'purple' and len(cluster_centers) > 0:
-                    current_purple_centers = cluster_centers
 
-                    # Find top-left, top-right, bottom-left, and bottom-right clusters
-                    top_left_cluster = min(current_purple_centers, key=lambda x: (x[1], x[0]))  # Min y, then min x
-                    top_right_cluster = min(current_purple_centers, key=lambda x: (x[1], -x[0]))  # Min y, then max x
-                    bottom_left_cluster = max(current_purple_centers, key=lambda x: (x[1], -x[0]))  # Max y, then min x
-                    bottom_right_cluster = max(current_purple_centers, key=lambda x: (x[1], x[0]))  # Max y, then max x
+                blue_left_deque.append(left_cluster)
+                blue_right_deque.append(right_cluster)
 
-                    # Update deques for each corner
-                    purple_top_left_deque.append(top_left_cluster)
-                    purple_top_right_deque.append(top_right_cluster)
-                    purple_bottom_left_deque.append(bottom_left_cluster)
-                    purple_bottom_right_deque.append(bottom_right_cluster)
+            cluster_colors = [(0, 255, 0), (255, 0, 0)] if color == 'green' else [(255, 255, 0), (0, 255, 255)]
+            # Sort the valid contours by area in descending order
+            valid_contours_sorted = sorted(valid_contours, key=cv2.contourArea, reverse=True)
 
-                cluster_colors = [(0, 255, 0), (255, 0, 0), (255, 255, 0), (0, 255, 255)]
-                for i, contour in enumerate(valid_contours):
-                    cv2.drawContours(frame, [contour], -1, cluster_colors[kmeans.labels_[i]], 2)
-                    cv2.circle(frame, centres[i], 5, cluster_colors[kmeans.labels_[i]], -1)
+            # Select the two largest contours
+            if color == 'green':
+                largest_contours = valid_contours_sorted[:3]
+            if color == 'blue':
+                largest_contours = valid_contours_sorted[:1]
+
+            count = 0
+            # Draw the two largest contours and their centers
+            for contour in largest_contours:
+                # Find the center of the contour
+                center = find_center(contour)
+
+                # Use a default color (e.g., green) for drawing if cluster_colors is not applicable
+                #if color == 'green':
+                #    cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
+                #    text = f"Green {count}"
+                #    cv2.putText(frame, text, (center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                if color == 'blue':
+                #    cv2.drawContours(frame, [contour], -1, (255, 0, 0), 2)
+                    valid_contours_blue.append(contour)
+                #cv2.circle(frame, center, 5, (0, 255, 0), -1)
+
+                count=count+1
+
 
 
         # Calculate the running average of the centers over the last 20 frames, ignoring anomalies
-        if len(purple_top_left_deque) == max_frames and len(purple_bottom_left_deque) == max_frames and len(purple_top_right_deque) == max_frames and len(purple_bottom_right_deque) == max_frames:
-            filtered_top_left_purple = filter_anomalies(purple_top_left_deque)
-            filtered_top_right_purple = filter_anomalies(purple_top_right_deque)
-            filtered_bottom_left_purple = filter_anomalies(purple_bottom_left_deque)
-            filtered_bottom_right_purple = filter_anomalies(purple_bottom_right_deque)
-            avg_top_left_purple = np.mean(filtered_top_left_purple, axis=0) if len(filtered_top_left_purple) > 0 else np.array([0.0, 0.0])
-            avg_top_right_purple = np.mean(filtered_top_right_purple, axis=0) if len(filtered_top_right_purple) > 0 else np.array([0.0, 0.0])
-            avg_bottom_left_purple = np.mean(filtered_bottom_left_purple, axis=0) if len(filtered_bottom_left_purple) > 0 else np.array([0.0, 0.0])
-            avg_bottom_right_purple = np.mean(filtered_bottom_right_purple, axis=0) if len(filtered_bottom_right_purple) > 0 else np.array([0.0, 0.0])
-
+        if len(green_left_deque) == max_frames and len(green_right_deque) == max_frames:
+            filtered_left_green = filter_anomalies(green_left_deque)
+            filtered_right_green = filter_anomalies(green_right_deque)
+            avg_left_green = np.mean(filtered_left_green, axis=0) if len(filtered_left_green) > 0 else np.array([0.0, 0.0])
+            avg_right_green = np.mean(filtered_right_green, axis=0) if len(filtered_right_green) > 0 else np.array([0.0, 0.0])
         else:
-            avg_bottom_right_purple = avg_top_right_purple = avg_bottom_left_purple = avg_top_left_purple = np.array([0.0, 0.0])
+            avg_left_green = avg_right_green = np.array([0.0, 0.0])
 
+        if len(blue_left_deque) == max_frames and len(blue_right_deque) == max_frames:
+            filtered_left_blue = filter_anomalies(blue_left_deque)
+            filtered_right_blue = filter_anomalies(blue_right_deque)
+            avg_left_blue = np.mean(filtered_left_blue, axis=0) if len(filtered_left_blue) > 0 else np.array([0.0, 0.0])
+            avg_right_blue = np.mean(filtered_right_blue, axis=0) if len(filtered_right_blue) > 0 else np.array([0.0, 0.0])
+        else:
+            avg_left_blue = avg_right_blue = np.array([0.0, 0.0])
 
-        # Draw polygons connecting all four cluster centers (leftmost and rightmost for green and blue)
-        if current_purple_centers is not None:
-            # Collect the four centers (leftmost and rightmost from green and blue)
-            all_centers = np.vstack((
-                avg_top_left_purple,
-                avg_top_right_purple,
-                avg_bottom_right_purple,
-                avg_bottom_left_purple
-            )).astype(int)
-
-            if len(all_centers) == 4:  # Ensure there are exactly four centers
-                cv2.polylines(frame, [all_centers], isClosed=True, color=(0, 255, 255), thickness=2)
 
         # Process the frame to detect hands
         results = hands.process(frame)
 
         # Draw landmarks and connections for detected hands
         if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            for idx in range(len(results.multi_hand_landmarks)):
+                hand_landmarks = results.multi_hand_landmarks[idx]
+
+                # Draw landmarks and connections on the frame
+                #mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+                # Determine if it's a left or right hand
+                handedness = results.multi_handedness[idx].classification[0].label
+                confidence = results.multi_handedness[idx].classification[0].score
+
+                # Display the hand type and confidence
+                text = f"{handedness} ({confidence:.2f})"
+                x = int(hand_landmarks.landmark[mp_hands.HandLandmark.WRIST].x * frame.shape[1])
+                y = int(hand_landmarks.landmark[mp_hands.HandLandmark.WRIST].y * frame.shape[0])
+                #cv2.putText(frame, text, (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+
+                # Add text on the tip of the index finger
+                index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                index_coords = (int(index_finger_tip.x * frame.shape[1]), int(index_finger_tip.y * frame.shape[0]))
+
+                left_hand_index = False
+                right_hand_index = False
+                left_hand_pinky = False
+                right_hand_pinky = False
+
+                if handedness == 'Left':
+                    if current_green_centers is not None and len(current_green_centers) >= 2:
+                        try:
+                            second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[2]
+                            second_largest_center = find_center(second_largest_contour)
+                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(index_coords), True)
+                            #cv2.putText(frame, f"Distance to Green 1: {distance:.2f}", (50, 400), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            if distance > distance_threshold:
+                                left_hand_index = True
+                        except:
+                            left_hand_index = False
+
+                if handedness == 'Right':
+
+                    if current_blue_centers is not None and len(current_blue_centers) >= 2:
+                        try:
+                            second_largest_contour = sorted(valid_contours_blue, key=cv2.contourArea, reverse=True)[0]
+                            second_largest_center = find_center(second_largest_contour)
+                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(index_coords), True)
+                            #cv2.putText(frame, f"Distance to blue 1: {distance:.2f}", (50, 400), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            if distance > distance_threshold:
+                                right_hand_index = True
+                        except:
+                            right_hand_index = False
+
+
+                # Add text on the tip of the pinky finger
+                left_pinky = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
+                left_pinky_coords = (int(left_pinky.x * frame.shape[1]), int(left_pinky.y * frame.shape[0]))
+
+                # Check if it's a left hand and calculate distance to Green 2 (second largest green contour)
+                if handedness == 'Left':
+                    if current_green_centers is not None and len(current_green_centers) >= 2:
+                        try:
+                            second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[0]
+                            second_largest_center = find_center(second_largest_contour)
+
+                            # Calculate the distance from the pinky to the second largest green contour center
+                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(left_pinky_coords), True)
+                            #cv2.putText(frame, f"Distance to Green 0: {distance:.2f}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            if distance > distance_threshold:
+                                left_hand_pinky = True
+                        except:
+                            left_hand_pinky = False
+
+                if (left_hand_pinky and left_hand_index):
+                    cv2.putText(frame, f"Correct placement of right hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+                # Check if it's a left hand and calculate distance to Green 2 (second largest green contour)
+                if handedness == 'Right':
+                    if current_green_centers is not None and len(current_green_centers) >= 2:
+                        try:
+                            second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[2]
+                            second_largest_center = find_center(second_largest_contour)
+
+                            # Calculate the distance from the pinky to the second largest green contour center
+                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(left_pinky_coords), True)
+                            #cv2.putText(frame, f"Distance to Green 2: {distance:.2f}", (200, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            if distance > distance_threshold:
+                                right_hand_pinky = True
+                        except:
+                            right_hand_pinky = False
+
+                if (right_hand_pinky and right_hand_index):
+                    cv2.putText(frame, f"Correct placement of left hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         # Display the current frame with shapes and hands drawn
         cv2.imshow('Shape and Hand Detection', frame)
