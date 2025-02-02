@@ -124,23 +124,14 @@ else:
             if color == 'blue':
                 largest_contours = valid_contours_sorted[:1]
 
-            count = 0
             # Draw the two largest contours and their centers
             for contour in largest_contours:
                 # Find the center of the contour
                 center = find_center(contour)
 
-                # Use a default color (e.g., green) for drawing if cluster_colors is not applicable
-                #if color == 'green':
-                #    cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
-                #    text = f"Green {count}"
-                #    cv2.putText(frame, text, (center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                 if color == 'blue':
-                #    cv2.drawContours(frame, [contour], -1, (255, 0, 0), 2)
                     valid_contours_blue.append(contour)
-                #cv2.circle(frame, center, 5, (0, 255, 0), -1)
 
-                count=count+1
 
 
 
@@ -170,30 +161,25 @@ else:
             for idx in range(len(results.multi_hand_landmarks)):
                 hand_landmarks = results.multi_hand_landmarks[idx]
 
-                # Draw landmarks and connections on the frame
-                #mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
                 # Determine if it's a left or right hand
                 handedness = results.multi_handedness[idx].classification[0].label
-                confidence = results.multi_handedness[idx].classification[0].score
 
-                # Display the hand type and confidence
-                text = f"{handedness} ({confidence:.2f})"
-                x = int(hand_landmarks.landmark[mp_hands.HandLandmark.WRIST].x * frame.shape[1])
-                y = int(hand_landmarks.landmark[mp_hands.HandLandmark.WRIST].y * frame.shape[0])
-                #cv2.putText(frame, text, (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-
-                # Add text on the tip of the index finger
+                # Locate the index finger
                 index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                 index_coords = (int(index_finger_tip.x * frame.shape[1]), int(index_finger_tip.y * frame.shape[0]))
+
+                # Locate the pinky finger
+                left_pinky = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
+                left_pinky_coords = (int(left_pinky.x * frame.shape[1]), int(left_pinky.y * frame.shape[0]))
 
                 left_hand_index = False
                 right_hand_index = False
                 left_hand_pinky = False
                 right_hand_pinky = False
 
+                # check placement of left hand
                 if handedness == 'Left':
+                    # check for left hand index being in the correct green contour
                     if current_green_centers is not None and len(current_green_centers) >= 2:
                         try:
                             second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[2]
@@ -202,59 +188,52 @@ else:
                             #cv2.putText(frame, f"Distance to Green 1: {distance:.2f}", (50, 400), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                             if distance > distance_threshold:
                                 left_hand_index = True
+                        # if the hand is fully covering a contour, consider placement to be incorrect
                         except:
                             left_hand_index = False
 
-                if handedness == 'Right':
-
-                    if current_blue_centers is not None and len(current_blue_centers) >= 2:
-                        try:
-                            second_largest_contour = sorted(valid_contours_blue, key=cv2.contourArea, reverse=True)[0]
-                            second_largest_center = find_center(second_largest_contour)
-                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(index_coords), True)
-                            #cv2.putText(frame, f"Distance to blue 1: {distance:.2f}", (50, 400), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                            if distance > distance_threshold:
-                                right_hand_index = True
-                        except:
-                            right_hand_index = False
-
-
-                # Add text on the tip of the pinky finger
-                left_pinky = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
-                left_pinky_coords = (int(left_pinky.x * frame.shape[1]), int(left_pinky.y * frame.shape[0]))
-
-                # Check if it's a left hand and calculate distance to Green 2 (second largest green contour)
-                if handedness == 'Left':
+                    # check for left hand pinky being in the correct green contour
                     if current_green_centers is not None and len(current_green_centers) >= 2:
                         try:
                             second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[0]
                             second_largest_center = find_center(second_largest_contour)
 
-                            # Calculate the distance from the pinky to the second largest green contour center
                             distance = cv2.pointPolygonTest(second_largest_contour, tuple(left_pinky_coords), True)
-                            #cv2.putText(frame, f"Distance to Green 0: {distance:.2f}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                             if distance > distance_threshold:
                                 left_hand_pinky = True
+                        # if the hand is fully covering a contour, consider placement to be incorrect
                         except:
                             left_hand_pinky = False
 
-                if (left_hand_pinky and left_hand_index):
-                    cv2.putText(frame, f"Correct placement of right hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-                # Check if it's a left hand and calculate distance to Green 2 (second largest green contour)
                 if handedness == 'Right':
+                    # check for right hand index being in the correct blue contour
+                    if current_blue_centers is not None and len(current_blue_centers) >= 2:
+                        try:
+                            second_largest_contour = sorted(valid_contours_blue, key=cv2.contourArea, reverse=True)[0]
+                            second_largest_center = find_center(second_largest_contour)
+                            distance = cv2.pointPolygonTest(second_largest_contour, tuple(index_coords), True)
+                            if distance > distance_threshold:
+                                right_hand_index = True
+                        # if the hand is fully covering a contour, consider placement to be incorrect
+                        except:
+                            right_hand_index = False
+                    # check for right hand pinky being in the correct green contour
                     if current_green_centers is not None and len(current_green_centers) >= 2:
                         try:
                             second_largest_contour = sorted(valid_contours, key=cv2.contourArea, reverse=True)[2]
                             second_largest_center = find_center(second_largest_contour)
 
-                            # Calculate the distance from the pinky to the second largest green contour center
                             distance = cv2.pointPolygonTest(second_largest_contour, tuple(left_pinky_coords), True)
-                            #cv2.putText(frame, f"Distance to Green 2: {distance:.2f}", (200, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                             if distance > distance_threshold:
                                 right_hand_pinky = True
+                        # if the hand is fully covering a contour, consider placement to be incorrect
                         except:
                             right_hand_pinky = False
+
+
+                # release message if hands are placed correctly
+                if (left_hand_pinky and left_hand_index):
+                    cv2.putText(frame, f"Correct placement of right hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
                 if (right_hand_pinky and right_hand_index):
                     cv2.putText(frame, f"Correct placement of left hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
