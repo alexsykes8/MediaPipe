@@ -2,7 +2,7 @@ Basic Computer Vision.
 
 When run, uses a webcam to detect users hand placement on a coloured keyboard.
 
-Run from final, note that it might take a minute to open the camera. 
+Run from final.py, note that it might take a minute to open the camera. 
 
 If it is struggling to load your webcamera, try changing the number in line 66:
 
