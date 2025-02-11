@@ -1,8 +1,24 @@
 import cv2
 import numpy as np
-from collections import deque
 import mediapipe as mp
+from collections import deque
 
+
+# Function to update HSV values from trackbars
+def get_hsv_values_green():
+    lower_h = cv2.getTrackbarPos("Lower H", "HSV Adjustments Green")
+    lower_s = cv2.getTrackbarPos("Lower S", "HSV Adjustments Green")
+    lower_v = cv2.getTrackbarPos("Lower V", "HSV Adjustments Green")
+    upper_h = cv2.getTrackbarPos("Upper H", "HSV Adjustments Green")
+    upper_s = cv2.getTrackbarPos("Upper S", "HSV Adjustments Green")
+    upper_v = cv2.getTrackbarPos("Upper V", "HSV Adjustments Green")
+
+    return (lower_h, lower_s, lower_v), (upper_h, upper_s, upper_v)
+
+
+# Function to update trackbars
+def nothing(x):
+    pass
 
 
 # Function to filter out anomalies
@@ -32,6 +48,19 @@ green_left_deque = deque(maxlen=max_frames)
 green_right_deque = deque(maxlen=max_frames)
 blue_left_deque = deque(maxlen=max_frames)
 blue_right_deque = deque(maxlen=max_frames)
+
+
+cv2.namedWindow("HSV Adjustments Green")
+cv2.resizeWindow("HSV Adjustments Green", 400, 300)
+
+# create a trackbar so that the colour ranges can be edited dynamically
+cv2.createTrackbar("Lower H", "HSV Adjustments Green", 20, 179, nothing)
+cv2.createTrackbar("Lower S", "HSV Adjustments Green", 130, 255, nothing)
+cv2.createTrackbar("Lower V", "HSV Adjustments Green", 20, 255, nothing)
+cv2.createTrackbar("Upper H", "HSV Adjustments Green", 100, 179, nothing)
+cv2.createTrackbar("Upper S", "HSV Adjustments Green", 219, 255, nothing)
+cv2.createTrackbar("Upper V", "HSV Adjustments Green", 140, 255, nothing)
+
 
 # Distance of the fingertip to a colour block for it to be considered correct placement
 distance_threshold = -20
@@ -63,13 +92,15 @@ else:
         # Define color ranges for each object
         color_ranges = {
             'blue': [(100, 50, 50), (140, 255, 255)],  # Lower and upper range for blue
-            'green': [(40, 20, 20), (90, 170, 170)],  # Lower and upper range for green
+            'green': [get_hsv_values_green()[0], get_hsv_values_green()[1]],  # Lower and upper range for green
         }
 
         current_green_centers = None
         current_blue_centers = None
 
         valid_contours_blue = []
+        valid_contours_green = []
+
 
         for color, (lower, upper) in color_ranges.items():
             # Create a mask for the current color
@@ -128,6 +159,10 @@ else:
             for contour in largest_contours:
                 # Find the center of the contour
                 center = find_center(contour)
+
+                # Draw the contour and center
+                if color == 'green':
+                    valid_contours_green.append(contour)
 
                 if color == 'blue':
                     valid_contours_blue.append(contour)
@@ -237,6 +272,14 @@ else:
 
                 if (right_hand_pinky and right_hand_index):
                     cv2.putText(frame, f"Correct placement of left hand", (75, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        # Draw the three largest green contours and the one largest blue contour
+        for contour in valid_contours_green:
+            cv2.drawContours(frame, [contour], -1, (0, 255, 0), 3)
+
+        # Draw the blue contours
+        for contour in valid_contours_blue:
+            cv2.drawContours(frame, [contour], -1, (255, 0, 0), 3)
 
         # Display the current frame with shapes and hands drawn
         cv2.imshow('Shape and Hand Detection', frame)
