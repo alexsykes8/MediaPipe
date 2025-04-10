@@ -1,8 +1,8 @@
 Basic Computer Vision. 
 
-When run, uses a webcam to detect users hand placement on a coloured keyboard.
+When run, uses a webcam to detect users hand placement on a coloured keyboard. The more robust version uses CLAHE and gamma correction to improve accuracy in different lighting conditions.
 
-Run from final.py, note that it might take a minute to open the camera. 
+Run from final.py or the more robust final2.py, note that it might take a minute to open the camera. 
 
 If it is struggling to load your webcamera, try changing the number in line 66:
 
